@@ -6,10 +6,12 @@ import {
     commands,
     Range,
     Position,
+    QuickPickItem,
 } from "vscode";
 import { ChangeData, HistoryTreePointer } from "./HistoryTree";
 
 import { basename } from "path";
+import { randomUUID } from "crypto";
 
 function handleTextDocumentChange(
     observerMap: Map<string, HistoryTreePointer>,
@@ -25,9 +27,8 @@ function handleTextDocumentChange(
             observerMap.set(fileName, new HistoryTreePointer());
 
         const historyPointer = observerMap.get(fileName)!;
-        console.log(historyPointer.rootNode);
         if (controlFlag.isUndoRedo) return;
-
+        console.log(historyPointer.branches());
         for (const change of contentChanges) {
             const { range, text, rangeLength } = change;
             const oldText = getText(range);
@@ -37,6 +38,7 @@ function handleTextDocumentChange(
             historyPointer.addNodeAndAdvance({
                 range,
                 textAffected: text || oldText,
+                nodeID: randomUUID(),
                 editType: text
                     ? rangeLength === 0
                         ? "insert"
@@ -98,6 +100,28 @@ function reverseChange(changeData: ChangeData) {
     });
 }
 
+function executeChange(changeData: ChangeData) {
+    const editor = getActiveEditor();
+    if (!editor) {
+        window.showErrorMessage("Could not open editor");
+        return;
+    }
+
+    return editor.edit((editBuilder) => {
+        const { range, textAffected, editType } = changeData;
+        const { start } = range;
+        if (editType === "delete") {
+            const deleteRange = calculateRange(start, textAffected);
+            editBuilder.delete(deleteRange);
+        }
+
+        if (editType === "insert") editBuilder.insert(start, textAffected);
+
+        if (editType === "replace")
+            editBuilder.replace(changeData.range, changeData.textAffected);
+    });
+}
+
 export function activate(context: ExtensionContext) {
     const observerMap = new Map<string, HistoryTreePointer>([]);
     const controlFlag = { isUndoRedo: false };
@@ -106,11 +130,10 @@ export function activate(context: ExtensionContext) {
         handleTextDocumentChange(observerMap, controlFlag)
     );
 
+    // TODO: stop infinite redos
     const undoDisposable = commands.registerCommand(
         "smart-undo-redo.undo",
         () => {
-            // The code you place here will be executed every time your command is executed
-            // Display a message box to the user
             const filename = getCurrentFilenameOrIgnore("undo");
             if (!filename) return;
 
@@ -121,6 +144,7 @@ export function activate(context: ExtensionContext) {
             if (!undoData) return;
 
             controlFlag.isUndoRedo = true;
+            console.log(historyPointer.branches());
             reverseChange(undoData)?.then((isSuccessful) => {
                 controlFlag.isUndoRedo = false;
                 if (!isSuccessful) {
@@ -134,8 +158,39 @@ export function activate(context: ExtensionContext) {
 
     const redoDisposable = commands.registerCommand(
         "smart-undo-redo.redo",
-        () => {
-            window.showQuickPick(["Redo option 1", "Redo option 2"]);
+        async () => {
+            const filename = getCurrentFilenameOrIgnore("undo");
+            if (!filename) return;
+
+            const historyPointer = observerMap.get(filename);
+            if (!historyPointer) return;
+
+            const branchToRedo = await historyPointer.getRedoDataAndMove(
+                async (branches) => {
+                    const quickPickItems = branches.map((branch) => ({
+                        label: branch.changes!.textAffected,
+                        branch: branch,
+                    }));
+
+                    const selectedItem = await window.showQuickPick(
+                        quickPickItems
+                    );
+
+                    if (!selectedItem?.branch) return;
+                    return selectedItem.branch;
+                }
+            );
+
+            controlFlag.isUndoRedo = true;
+            console.log(historyPointer.branches());
+            executeChange(branchToRedo!)?.then((isSuccessful) => {
+                controlFlag.isUndoRedo = false;
+                if (!isSuccessful) {
+                    window.showErrorMessage("Failed to redo action");
+                    return;
+                }
+                console.log("redid change");
+            });
         }
     );
 
