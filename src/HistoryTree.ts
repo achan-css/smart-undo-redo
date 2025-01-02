@@ -139,4 +139,8 @@ export class HistoryTreePointer {
     get rootNode() {
         return this._rootPointer;
     }
+
+    get isLeaf() {
+        return this._currentNode.children.length === 0;
+    }
 }

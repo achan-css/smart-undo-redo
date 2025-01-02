@@ -28,7 +28,7 @@ function handleTextDocumentChange(
 
         const historyPointer = observerMap.get(fileName)!;
         if (controlFlag.isUndoRedo) return;
-        console.log(historyPointer.branches());
+        // console.log(historyPointer.branches());
         for (const change of contentChanges) {
             const { range, text, rangeLength } = change;
             const oldText = getText(range);
@@ -144,7 +144,6 @@ export function activate(context: ExtensionContext) {
             if (!undoData) return;
 
             controlFlag.isUndoRedo = true;
-            console.log(historyPointer.branches());
             reverseChange(undoData)?.then((isSuccessful) => {
                 controlFlag.isUndoRedo = false;
                 if (!isSuccessful) {
@@ -163,7 +162,7 @@ export function activate(context: ExtensionContext) {
             if (!filename) return;
 
             const historyPointer = observerMap.get(filename);
-            if (!historyPointer) return;
+            if (!historyPointer || historyPointer.isLeaf) return;
 
             const branchToRedo = await historyPointer.getRedoDataAndMove(
                 async (branches) => {
@@ -182,7 +181,6 @@ export function activate(context: ExtensionContext) {
             );
 
             controlFlag.isUndoRedo = true;
-            console.log(historyPointer.branches());
             executeChange(branchToRedo!)?.then((isSuccessful) => {
                 controlFlag.isUndoRedo = false;
                 if (!isSuccessful) {
