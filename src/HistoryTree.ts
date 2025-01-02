@@ -83,20 +83,22 @@ class HistoryTreeNode {
 export class HistoryTreePointer {
     private _currentNode: HistoryTreeNode;
     private _rootPointer: HistoryTreeNode;
+    private _isRepeating: boolean;
 
     constructor() {
         this._currentNode = new HistoryTreeNode();
         this._rootPointer = this._currentNode;
+        this._isRepeating = false;
     }
 
     private async _traverseForward(selectChild: ChildSelectionHandler) {
-        if (this._currentNode.children.length === 0) return;
+        if (this._currentNode.children.length === 0) return false;
         if (this._currentNode.children.length > 1) {
             const selectedChild = await selectChild(this._currentNode.children);
             if (selectedChild) this._currentNode = selectedChild;
-            return;
-        }
-        this._currentNode = this._currentNode.children[0];
+        } else this._currentNode = this._currentNode.children[0];
+
+        return true;
     }
 
     private _traverseBackward() {
@@ -108,20 +110,25 @@ export class HistoryTreePointer {
     // any action that is not a undo/redo command
     public addNodeAndAdvance(newChange: ChangeData) {
         const nextNode = this._currentNode.addNode(newChange);
+        console.log(nextNode);
         this._currentNode = nextNode;
     }
 
     // the current node represents the action just done
     public getUndoDataAndMove() {
         const changes = this._currentNode.changes;
+        this._isRepeating = false;
         this._traverseBackward();
         return changes;
     }
 
     // the next node represents the action that was done after the current
     public async getRedoDataAndMove(selectChild: ChildSelectionHandler) {
-        await this._traverseForward(selectChild);
-        return this._currentNode.changes;
+        const changes = this._currentNode.changes;
+        if (this._isRepeating) return undefined;
+        const successfulMove = await this._traverseForward(selectChild);
+        this._isRepeating = !successfulMove;
+        return changes;
     }
 
     public length() {

@@ -6,7 +6,6 @@ import {
     commands,
     Range,
     Position,
-    QuickPickItem,
 } from "vscode";
 import { ChangeData, HistoryTreePointer } from "./HistoryTree";
 
@@ -28,7 +27,7 @@ function handleTextDocumentChange(
 
         const historyPointer = observerMap.get(fileName)!;
         if (controlFlag.isUndoRedo) return;
-        // console.log(historyPointer.branches());
+        console.log(historyPointer.branches());
         for (const change of contentChanges) {
             const { range, text, rangeLength } = change;
             const oldText = getText(range);
@@ -162,9 +161,10 @@ export function activate(context: ExtensionContext) {
             if (!filename) return;
 
             const historyPointer = observerMap.get(filename);
-            if (!historyPointer || historyPointer.isLeaf) return;
+            console.log(historyPointer);
+            if (!historyPointer) return;
 
-            const branchToRedo = await historyPointer.getRedoDataAndMove(
+            const changeData = await historyPointer.getRedoDataAndMove(
                 async (branches) => {
                     const quickPickItems = branches.map((branch) => ({
                         label: branch.changes!.textAffected,
@@ -180,8 +180,13 @@ export function activate(context: ExtensionContext) {
                 }
             );
 
+            if (!changeData) {
+                console.log("End of branch");
+                return;
+            }
+
             controlFlag.isUndoRedo = true;
-            executeChange(branchToRedo!)?.then((isSuccessful) => {
+            executeChange(changeData!)?.then((isSuccessful) => {
                 controlFlag.isUndoRedo = false;
                 if (!isSuccessful) {
                     window.showErrorMessage("Failed to redo action");
